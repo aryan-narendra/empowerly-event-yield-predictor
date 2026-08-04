@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Event yield forecast: Empowerly</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="wrap">
+
+  <header class="masthead">
+    <div>
+      <p class="eyebrow">Empowerly · dinner events</p>
+      <h1>How many people<br>will <em>actually</em> come?</h1>
+    </div>
+    <div class="train-chip" id="trainChip">Loading past events…</div>
+  </header>
+
+  <section class="setup">
+    <label class="drop" id="drop">
+      <input type="file" id="file" accept=".csv,.xlsx,.xls" aria-label="Upload a Luma guest export">
+      <p class="drop-title">Drop the Luma guest list here</p>
+      <p class="drop-sub">CSV or Excel export for an event that hasn't happened yet</p>
+      <p class="drop-file" id="dropFile"></p>
+    </label>
+
+    <div class="controls">
+      <div class="row-2">
+        <div class="field">
+          <label for="date">Event date</label>
+          <input type="date" id="date">
+        </div>
+        <div class="field">
+          <label for="tz">Time zone</label>
+          <select id="tz">
+            <option value="ET">Eastern</option>
+            <option value="CT">Central</option>
+            <option value="MT">Mountain</option>
+            <option value="MST">Arizona</option>
+            <option value="PT">Pacific</option>
+            <option value="AKT">Alaska</option>
+            <option value="HST">Hawaii</option>
+          </select>
+        </div>
+      </div>
+      <p class="field-note" id="tzNote">Doors at 6:00 PM local.</p>
+
+      <div class="field">
+        <label for="ci">Range shown</label>
+        <select id="ci">
+          <option value="0.5">50% confidence</option>
+          <option value="0.8">80% confidence</option>
+          <option value="0.9">90% confidence</option>
+          <option value="0.95" selected>95% confidence</option>
+          <option value="0.99">99% confidence</option>
+          <option value="0.999">99.9% confidence</option>
+        </select>
+      </div>
+
+      <label class="switch">
+        <input type="checkbox" id="optPending">
+        <span>Count guests awaiting approval
+          <small>Off: only approved guests are forecast.</small></span>
+      </label>
+
+      <label class="switch">
+        <input type="checkbox" id="optDeclined">
+        <span>Cancellations have been worked through
+          <small><b>Off:</b> nobody is counted out yet, and everyone is scored at rates that allow for
+          the cancellations still to come.<br><b>On:</b> guests marked not going are counted out, and the
+          rest are scored at the higher rate that applies once the list is settled.</small></span>
+      </label>
+    </div>
+  </section>
+
+  <div id="alert"></div>
+
+  <section class="empty" id="empty">
+    <h2>Waiting on a guest list</h2>
+    <p>Upload an export and set the event date to see the forecast.</p>
+  </section>
+
+  <main id="results" hidden>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Forecast</h2>
+        <span class="hint" id="forecastHint"></span>
+      </div>
+      <div class="forecast">
+        <div class="dist">
+          <p class="dist-label">People through the door</p>
+          <p class="dist-range" id="peopleRange"></p>
+          <p class="dist-sub" id="peopleSub"></p>
+          <div id="peoplePlot"></div>
+        </div>
+        <div class="dist">
+          <p class="dist-label">Families</p>
+          <p class="dist-range" id="familyRange"></p>
+          <p class="dist-sub" id="familySub"></p>
+          <div id="familyPlot"></div>
+        </div>
+      </div>
+      <div class="legend">
+        <span><i style="background:var(--pine-soft)"></i>the night itself is a coin flip per family</span>
+        <span><i style="background:var(--brass-soft)"></i>plus: the model learned from only a few past events</span>
+        <span><i style="background:var(--ink);height:2px"></i>most likely outcome</span>
+      </div>
+    </section>
+
+    <section class="stats" id="stats"></section>
+
+    <section class="charts">
+      <div class="panel">
+        <div class="panel-head"><h2>Graduation years</h2><span class="hint" id="gradHint"></span></div>
+        <div id="gradChart"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Where they came from</h2></div>
+        <div id="srcChart"></div>
+        <div class="src-list" id="srcList"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Every family</h2>
+        <div class="table-tools">
+          <select id="sort">
+            <option value="reg">Registration time</option>
+            <option value="prob">Likelihood to attend</option>
+            <option value="name">Name A–Z</option>
+            <option value="email">Email A–Z</option>
+            <option value="size">Group size</option>
+          </select>
+          <select id="dir">
+            <option value="asc">Ascending</option>
+            <option value="desc" selected>Descending</option>
+          </select>
+          <button class="btn" id="export">Download CSV</button>
+        </div>
+      </div>
+      <div class="scroll">
+        <table>
+          <thead><tr id="thead"></tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>How this was worked out</h2></div>
+      <div class="model-grid">
+        <div>
+          <p class="stat-k">What moves the odds</p>
+          <div class="coef" id="coefs"></div>
+        </div>
+        <div>
+          <p class="stat-k">Past events it learned from</p>
+          <div class="coef" id="trainStats"></div>
+        </div>
+        <div class="method" id="method"></div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer>Runs entirely in your browser. Nothing you upload is sent anywhere.</footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="model.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
