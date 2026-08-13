@@ -4,6 +4,8 @@
     { "file": "2026-06-30-san-jose.csv",     "label": "San Jose (Jun 30)" },
     { "file": "2026-07-14-bay-area.csv",     "label": "Bay Area (Jul 14)" },
     { "file": "2026-07-16-philadelphia.csv", "label": "Philadelphia (Jul 16)" },
-    { "file": "2026-07-30-palo-alto.csv",    "label": "Palo Alto (Jul 30)" }
+    { "file": "2026-07-30-palo-alto.csv",    "label": "Palo Alto (Jul 30)" },
+    { "file": "2026-08-04-palo-alto.csv",    "label": "Palo Alto (Aug 4)" },
+    { "file": "2026-08-12-san-jose.csv",    "label": "San Jose (Aug 12)" }
   ]
 }
