@@ -112,13 +112,27 @@ The range combines two separate uncertainties:
 
 - **the night itself** - even with perfect probabilities, each family is a coin
   flip, so turnout varies from evening to evening;
-- **the model** - it was fitted on a few hundred families, so the coefficients
+- **the model** - it was fitted on a handful of events, so the coefficients
   themselves are only approximately known.
 
-The page runs 6,000 simulated evenings. Each one draws a fresh set of
-coefficients from their uncertainty, then flips a coin per family. The reported
-range is the middle 50/80/90/95/99/99.9% of those evenings, and the plot shows
-both the combined range and the narrower night-only range beneath it.
+The second is measured by refitting the entire model on events resampled with
+replacement, sixty times, and keeping the coefficients from each. Whole events
+are resampled rather than individual families: families at one dinner shared an
+invitation, a venue and an evening, so treating them as independent draws would
+make the model look far surer of itself than it is.
+
+Every resample is a real constrained fit, so monotonicity holds in each one.
+This replaced an analytic covariance from the inverted Hessian, which does not
+work for this model. The Bernstein columns are collinear by construction, and
+control points sitting at the monotonicity boundary have no normal sampling
+distribution at all. Inverting that matrix produced standard errors several
+times the size of the coefficients, and a forecast that ran flat from nobody to
+everybody.
+
+The page then runs 6,000 simulated evenings. Each one picks a refit at random
+and flips a coin per family. The reported range is the middle
+50/80/90/95/99/99.9% of those evenings, and the plot shows both the combined
+range and the narrower night-only range beneath it.
 
 Lead time is capped at the longest lead the past events covered, so a list that
 opened months early is scored at that edge rather than extrapolated past it.
