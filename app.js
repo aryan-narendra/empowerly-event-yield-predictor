@@ -197,7 +197,7 @@ async function loadTraining() {
   state.trainRows = rows;
   state.loadedMeta = { loaded, skipped };
   return decorateModel(
-    buildModel(rows, { lambda: DEFAULT_LAMBDA, distK: DEFAULT_DIST_K }),
+    buildModel(rows, { lambda: DEFAULT_LAMBDA, distK: DEFAULT_DIST_K, bootstrap: 12 }),
     loaded, skipped,
   );
 }
@@ -210,10 +210,10 @@ function refineModel() {
   idle(() => {
     try {
       const better = buildModel(state.trainRows);
-      const same = state.model
-        && better.lambda === state.model.lambda
-        && better.distK === state.model.distK;
-      if (same) return;
+      /* Always swap in: even when the two tuning constants land where the
+         quick fit put them, the background pass carries five times as many
+         resamples, so the uncertainty band is smoother. */
+      if (!better) return;
       state.model = decorateModel(better, state.loadedMeta.loaded, state.loadedMeta.skipped);
       render();
     } catch (err) { /* the quick fit stands */ }
@@ -712,8 +712,13 @@ function render() {
     above picks between them.</p>
     <p><strong>The range.</strong> Two things are uncertain at once. Even a perfect model cannot
     know who walks in on the night, and this one was fitted on ${model.n} families from
-    ${model.events.length} events, so its own coefficients are approximate. The forecast runs 6,000
-    simulated evenings, drawing fresh coefficients each time, and reports the middle ${pct}%.</p>
+    ${model.events.length} events, so its own coefficients are approximate. The second part is
+    measured by refitting the whole model on events resampled with replacement, ${model.bootstrapN}
+    times, rather than by assuming the coefficients follow a bell curve. Whole events are resampled
+    rather than families, because families at one dinner share an invitation, a venue and an
+    evening, so treating them as independent would make the model look far surer than it is. The
+    forecast then runs 6,000 simulated evenings, each one picking a refit at random and flipping a
+    coin per family, and reports the middle ${pct}%.</p>
     <p><strong>Excluded.</strong> Internal test registrations never enter any part of this page.</p>`;
 
   $('empty').hidden = true;
