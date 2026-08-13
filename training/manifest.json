@@ -1,11 +1,48 @@
 {
-  "note": "Finished events the model learns from. Drop a Luma guest export in this folder, name it starting with the event date (2026-08-12-princeton.csv), and add a line below. On GitHub Pages this folder is also read directly from the repo, so the manifest is only a fallback. Optional per-event keys: label, date, tz, region.",
+  "note": "Finished events the model learns from. Drop a Luma guest export in this folder, name it starting with the event date (2026-08-12-princeton.csv), and add a line below. On GitHub Pages this folder is also read directly from the repo, so the manifest is only a fallback. Optional per-event keys: label, date, tz, region, venue, lat, lon.",
+  "venueNote": "lat and lon are the event venue, used for the distance predictor. An event with no coordinates still trains group booking and lead time; it simply contributes nothing to the distance term, and its families are scored at the average distance effect. Add coordinates when you can: look up the venue, right-click the pin in any map app, and paste the pair. The venue field is free text for humans and is not parsed.",
   "events": [
-    { "file": "2026-06-30-san-jose.csv",     "label": "San Jose (Jun 30)" },
-    { "file": "2026-07-14-bay-area.csv",     "label": "Bay Area (Jul 14)" },
-    { "file": "2026-07-16-philadelphia.csv", "label": "Philadelphia (Jul 16)" },
-    { "file": "2026-07-30-palo-alto.csv",    "label": "Palo Alto (Jul 30)" },
-    { "file": "2026-08-04-palo-alto.csv",    "label": "Palo Alto (Aug 4)" },
-    { "file": "2026-08-12-san-jose.csv",    "label": "San Jose (Aug 12)" }
+    {
+      "file": "2026-06-30-san-jose.csv",
+      "label": "San Jose (Jun 30)",
+      "venue": "Suspiro, Santana Row, San Jose",
+      "lat": 37.3203,
+      "lon": -121.9478
+    },
+    {
+      "file": "2026-07-14-bay-area.csv",
+      "label": "Bay Area (Jul 14)",
+      "venue": "Cetrella, 160 State St, Los Altos",
+      "lat": 37.3785,
+      "lon": -122.1141
+    },
+    {
+      "file": "2026-07-16-philadelphia.csv",
+      "label": "Philadelphia (Jul 16)",
+      "venue": "Fitler Club, 24 S 24th St, Philadelphia",
+      "lat": 39.9522,
+      "lon": -75.1789
+    },
+    {
+      "file": "2026-07-30-palo-alto.csv",
+      "label": "Palo Alto (Jul 30)",
+      "venue": "478 Anton Ct, Palo Alto (private home)",
+      "lat": 37.4443,
+      "lon": -122.1497
+    },
+    {
+      "file": "2026-08-04-palo-alto.csv",
+      "label": "Palo Alto (Aug 4)",
+      "venue": "MacArthur Park, 27 University Ave, Palo Alto",
+      "lat": 37.4437,
+      "lon": -122.1653
+    },
+    {
+      "file": "2026-08-12-san-jose.csv",
+      "label": "San Jose (Aug 12)",
+      "venue": "Maggiano's Little Italy, 3055 Olin Ave, San Jose",
+      "lat": 37.3210,
+      "lon": -121.9475
+    }
   ]
 }
