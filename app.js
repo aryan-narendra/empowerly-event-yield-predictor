@@ -1,7 +1,10 @@
 /* UI layer. All computation is local; nothing leaves the browser. */
 
 const $ = (id) => document.getElementById(id);
-const state = { model: null, rows: [], families: [], fileName: '', detected: null, trainError: null };
+const state = {
+  model: null, rows: [], families: [], fileName: '', detected: null,
+  trainError: null, venue: null, venueText: '', trainRows: null, refining: false,
+};
 
 const PINE = '#2c6b57', PINE_SOFT = '#b8d3c7', BRASS_SOFT = '#e3d6ad', INK = '#16262a';
 const SRC_COLORS = ['#2c6b57', '#3a5a6e', '#8d7028', '#9c4a3b', '#5a7f6d', '#6b5b8e', '#3f7d86', '#a06a35'];
@@ -58,6 +61,10 @@ const median = (xs) => {
  * straight from the repo, so a finished export dropped in there is picked up on
  * the next load. Everywhere else (and if the API is rate limited) the manifest
  * lists the files, since a static host can't be asked what's in a folder.
+ *
+ * The manifest is also the only place venue coordinates can come from, so an
+ * event discovered through the folder listing alone trains lead time and group
+ * booking but contributes nothing to the distance term.
  */
 async function discoverTraining() {
   const entries = new Map();
@@ -115,9 +122,11 @@ async function loadPastEvent(entry) {
         ticketsChecked: Number(r.tickets_checked || 0),
         isGroup: tickets > 1 ? 1 : 0,
         status: Number(r.cancelled) ? 'cancelled' : 'approved',
+        zip: '',
+        miles: null,          // anonymised files strip ZIPs, so no distance
       });
     }
-    return { label, rows: out, date: entry.date || null, tz: entry.tz || null };
+    return { label, rows: out, date: entry.date || null, tz: entry.tz || null, venue: null };
   }
 
   if (!('created_at' in rows[0])) throw new Error(`${entry.file} has no created_at column`);
@@ -133,6 +142,12 @@ async function loadPastEvent(entry) {
   const startMs = eventStartMs(date, tz);
   const region = entry.region || regionForTz(tz);
 
+  /* Venue: explicit coordinates win, then the free-text venue field. Without
+     either, this event simply sits out of the distance term. */
+  const venue = (Number.isFinite(entry.lat) && Number.isFinite(entry.lon))
+    ? [entry.lat, entry.lon]
+    : resolveVenue(entry.venue);
+
   const out = buildFamilies(rows, startMs).map((fam) => ({
     eventId: label,
     region,
@@ -142,8 +157,20 @@ async function loadPastEvent(entry) {
     ticketsChecked: fam.checkedIn,
     isGroup: fam.isGroup,
     status: fam.status,
+    zip: fam.zip,
+    miles: familyMiles(fam, venue),
   }));
-  return { label, rows: out, date, tz, region };
+  return { label, rows: out, date, tz, region, venue, venueText: entry.venue || null };
+}
+
+function decorateModel(model, loaded, skipped) {
+  model.loaded = loaded.map((e) => ({
+    label: e.label, date: e.date, n: e.rows.length, region: e.region,
+    venueText: e.venueText || null, hasVenue: !!e.venue,
+    withMiles: e.rows.filter((r) => r.miles != null).length,
+  }));
+  model.skipped = skipped;
+  return model;
 }
 
 async function loadTraining() {
@@ -162,10 +189,35 @@ async function loadTraining() {
   if (rows.length < 12) {
     throw new Error(`Only ${rows.length} past families could be read, which is too few to fit a model.`);
   }
-  const model = buildModel(rows);
-  model.loaded = loaded.map((e) => ({ label: e.label, date: e.date, n: e.rows.length, region: e.region }));
-  model.skipped = skipped;
-  return model;
+
+  /* Two passes. The first holds the two tuning constants fixed and lands in a
+     few milliseconds, so the page paints straight away even on an old machine.
+     The second searches both by leave-one-event-out, which is nearly all of the
+     work, and swaps in only if it actually lands somewhere different. */
+  state.trainRows = rows;
+  state.loadedMeta = { loaded, skipped };
+  return decorateModel(
+    buildModel(rows, { lambda: DEFAULT_LAMBDA, distK: DEFAULT_DIST_K }),
+    loaded, skipped,
+  );
+}
+
+/** Background pass: search the shape penalty and the distance constant. */
+function refineModel() {
+  if (state.refining || !state.trainRows || !state.loadedMeta) return;
+  state.refining = true;
+  const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 60));
+  idle(() => {
+    try {
+      const better = buildModel(state.trainRows);
+      const same = state.model
+        && better.lambda === state.model.lambda
+        && better.distK === state.model.distK;
+      if (same) return;
+      state.model = decorateModel(better, state.loadedMeta.loaded, state.loadedMeta.skipped);
+      render();
+    } catch (err) { /* the quick fit stands */ }
+  });
 }
 
 /* ---------- charts ---------- */
@@ -236,7 +288,7 @@ function drawDistribution(host, sim, level, key) {
   const cap = svgEl('text', {
     x: padX, y: ruleY + 32, 'font-size': 9.5, fill: '#52646a', 'font-family': 'IBM Plex Mono, monospace',
   });
-  cap.textContent = `${outer.lo}–${outer.hi} all in  ·  ${inner.lo}–${inner.hi} if the model were exact`;
+  cap.textContent = `${outer.lo}\u2013${outer.hi} all in  \u00b7  ${inner.lo}\u2013${inner.hi} if the model were exact`;
   svg.appendChild(cap);
 
   host.innerHTML = '';
@@ -337,9 +389,9 @@ function drawSourceChart(host, listHost, families) {
 
 const COLUMNS = [
   ['Registrant', 'name'], ['Likely to attend', 'prob'], ['Tickets', 'tickets'],
-  ['Registered', 'registered'], ['Days ahead', 'lead'], ['Status', 'status'],
-  ['Grad year', 'grad'], ['High school', 'school'], ['ZIP', 'zip'],
-  ['Source', 'source'], ['Email', 'email'],
+  ['Registered', 'registered'], ['Days ahead', 'lead'], ['Miles out', 'miles'],
+  ['Status', 'status'], ['Grad year', 'grad'], ['High school', 'school'],
+  ['ZIP', 'zip'], ['Source', 'source'], ['Email', 'email'],
 ];
 
 const fmtDate = (ms) => new Date(ms).toLocaleString(undefined, {
@@ -354,7 +406,8 @@ function sortFamilies(families, key, dir) {
     name: (a, b) => a.name.localeCompare(b.name),
     email: (a, b) => a.email.localeCompare(b.email),
     size: (a, b) => a.tickets - b.tickets || a.registeredMs - b.registeredMs,
-  }[key];
+    miles: (a, b) => (a.miles == null ? Infinity : a.miles) - (b.miles == null ? Infinity : b.miles),
+  }[key] || ((a, b) => a.registeredMs - b.registeredMs);
   return [...families].sort((a, b) => mul * cmp(a, b));
 }
 
@@ -399,6 +452,7 @@ function renderTable(families) {
     cell('c-num', f.tickets);
     cell('c-mono', fmtDate(f.registeredMs));
     cell('c-num', f.leadDays.toFixed(1));
+    cell('c-num', f.miles == null ? '\u2013' : f.miles.toFixed(1));
 
     const tag = document.createElement('span');
     tag.className = `tag tag-${f.status}`;
@@ -421,7 +475,8 @@ function exportCsv(families) {
   for (const f of sorted) {
     const row = [
       f.name, f.inPool ? (f.prob * 100).toFixed(1) + '%' : 'excluded', f.tickets,
-      new Date(f.registeredMs).toISOString(), f.leadDays.toFixed(2), f.status,
+      new Date(f.registeredMs).toISOString(), f.leadDays.toFixed(2),
+      f.miles == null ? '' : f.miles.toFixed(2), f.status,
       f.gradYear || '', f.school, f.zip, f.utm, f.email,
     ];
     lines.push(row.map((v) => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`).join(','));
@@ -439,28 +494,57 @@ function exportCsv(families) {
 function statCard(label, value, note) {
   const div = document.createElement('div');
   div.className = 'stat';
-  div.innerHTML = `<p class="stat-k"></p><div class="stat-v"></div><p class="stat-n"></p>`;
+  div.innerHTML = '<p class="stat-k"></p><div class="stat-v"></div><p class="stat-n"></p>';
   div.querySelector('.stat-k').textContent = label;
   div.querySelector('.stat-v').textContent = value;
   div.querySelector('.stat-n').textContent = note;
   return div;
 }
 
+/** Read the venue box and report back what it resolved to, or didn't. */
+function syncVenue() {
+  const text = $('venue').value.trim();
+  state.venueText = text;
+  state.venue = resolveVenue(text);
+  const note = $('venueNote');
+  if (!text) {
+    note.className = 'field-note';
+    note.textContent = 'A venue name, a city, a ZIP, or a latitude and longitude pair. Without it the forecast ignores how far guests have to travel.';
+  } else if (state.venue) {
+    note.className = 'field-note venue-ok';
+    note.textContent = `Found it: ${state.venue[0].toFixed(4)}, ${state.venue[1].toFixed(4)}. Travel distance is in the forecast.`;
+  } else {
+    note.className = 'field-note venue-miss';
+    note.textContent = 'Not recognised, so distance is left out. Try a ZIP code, a nearby city, or paste coordinates from a map.';
+  }
+}
+
 function render() {
   const model = state.model;
   if (!model || !state.rows.length) return;
-  const dateVal = $('date').value;
+
+  /* The date field is optional. If it is blank, fall back to a date in the
+     uploaded filename. Only if both are missing is there nothing to measure
+     lead times against. */
+  const fromName = (state.fileName.match(/(\d{4}-\d{2}-\d{2})/) || [])[1];
+  const dateVal = $('date').value || fromName || '';
   if (!dateVal) {
     $('empty').hidden = false;
     $('results').hidden = true;
     $('empty').querySelector('h2').textContent = 'One more thing';
-    $('empty').querySelector('p').textContent = 'Set the event date so registration lead times can be measured.';
+    $('empty').querySelector('p').textContent =
+      'Set the event date, or name the file starting with it, so registration lead times can be measured.';
     return;
+  }
+  if (!$('date').value && fromName) {
+    $('dateNote').textContent = `Using ${fromName} from the filename. Set a date above to override it.`;
   }
 
   const tz = $('tz').value;
   const startMs = eventStartMs(dateVal, tz);
   const families = buildFamilies(state.rows, startMs);
+  attachDistance(families, state.venue);
+
   const includePending = $('optPending').checked;
   const cancellationsDone = $('optDeclined').checked;
   const fit = cancellationsDone ? model.stillOn : model.everyone;
@@ -474,7 +558,7 @@ function render() {
   state.families = families;
 
   if (!pool.length) {
-    $('alert').innerHTML = '<div class="alert">No guests to forecast. Turn on “Count guests awaiting approval” if the list is all pending.</div>';
+    $('alert').innerHTML = '<div class="alert">No guests to forecast. Turn on \u201cCount guests awaiting approval\u201d if the list is all pending.</div>';
     $('results').hidden = true;
     $('empty').hidden = true;
     return;
@@ -482,6 +566,15 @@ function render() {
 
   const notes = [];
   for (const s of model.skipped || []) notes.push(`Skipped in the training folder: ${s}.`);
+  if (state.venueText && !state.venue) {
+    notes.push('The venue could not be located, so travel distance is not part of this forecast.');
+  }
+  if (state.venue && model.useDist) {
+    const known = pool.filter((f) => f.miles != null).length;
+    if (known < pool.length * 0.5) {
+      notes.push(`Only ${known} of ${pool.length} families have a ZIP the model recognises, so distance is doing little work on this list.`);
+    }
+  }
   $('alert').innerHTML = notes.map((n) => `<div class="alert">${n}</div>`).join('');
 
   const level = Number($('ci').value);
@@ -494,7 +587,7 @@ function render() {
   $('familyRange').innerHTML = `${fams.outer.lo}<span class="to">to</span>${fams.outer.hi}`;
   $('peopleSub').innerHTML = `Most likely <b>${Math.round(sim.expected.people)}</b> of ${pool.reduce((s, f) => s + f.tickets, 0)} tickets booked`;
   $('familySub').innerHTML = `Most likely <b>${Math.round(sim.expected.families)}</b> of ${pool.length} families registered`;
-  $('forecastHint').textContent = `${pct}% range · ${pool.length} families in the forecast`;
+  $('forecastHint').textContent = `${pct}% range \u00b7 ${pool.length} families in the forecast`;
 
   const booked = pool.reduce((s, f) => s + f.tickets, 0);
   const approved = families.filter((f) => f.status === 'approved');
@@ -503,6 +596,7 @@ function render() {
   const unlikely = pool.filter((f) => f.prob < 0.3).length;
   const groups = pool.filter((f) => f.isGroup).length;
   const pending = families.filter((f) => f.status === 'pending').length;
+  const farOut = pool.filter((f) => f.miles != null && f.miles > model.distCap).length;
 
   const stats = $('stats');
   stats.innerHTML = '';
@@ -510,12 +604,16 @@ function render() {
     statCard('Headcount to plan for', people.outer.hi, `upper end of the ${pct}% range`),
     statCard('If everyone showed', approved.reduce((s, f) => s + f.tickets, 0), `${approved.length} approved families`),
     statCard('Empty seats expected', Math.max(booked - Math.round(sim.expected.people), 0), `of ${booked} tickets booked`),
-    statCard('Likely to come', likely, `${unsure} on the fence · ${unlikely} unlikely`),
+    statCard('Likely to come', likely, `${unsure} on the fence \u00b7 ${unlikely} unlikely`),
     statCard('Booked as a group', `${groups}/${pool.length}`, 'groups show up far more often'),
     statCard('Awaiting approval', pending, includePending ? 'counted in the forecast' : 'not counted'),
     statCard('Cancelled', families.filter((f) => f.status === 'cancelled').length,
       cancellationsDone ? 'counted as not attending' : 'forecast like everyone else'),
   );
+  if (model.useDist && state.venue) {
+    stats.append(statCard('Beyond the usual radius', farOut,
+      `scored at the ${model.distCap.toFixed(0)} mile edge, not further`));
+  }
 
   drawGradChart($('gradChart'), pool);
   $('gradHint').textContent = `${pool.filter((f) => !f.gradYear).length} not reported`;
@@ -536,9 +634,22 @@ function render() {
     coefs.appendChild(row);
   };
   const gi = fit.terms.indexOf('group');
+  const di = fit.terms.indexOf('distance');
   addCoef('Solo booking', `${Math.round(fit.soloRate * 100)}% attend`);
   addCoef('Booked 2 or more', `${Math.round(fit.groupRate * 100)}% attend`);
-  if (gi > 0) addCoef('A group vs a solo', `${Math.exp(fit.beta[gi]).toFixed(2)}x the odds`, PINE);
+  if (gi >= 0) addCoef('A group vs a solo', `${Math.exp(fit.beta[gi]).toFixed(2)}x the odds`, PINE);
+
+  /* The lead curve is a handful of control points, which mean nothing on their
+     own, so show what the curve does rather than what it is made of. */
+  const probe = (over) => predictOne(fit, Object.assign(
+    { leadDays: 7, isGroup: 0, tickets: 1, miles: null }, over));
+  addCoef('Signed up this week', `${Math.round(probe({ leadDays: 3 }) * 100)}% attend`);
+  addCoef('Signed up a month out', `${Math.round(probe({ leadDays: 30 }) * 100)}% attend`);
+  if (di >= 0) {
+    addCoef('Lives 5 miles out', `${Math.round(probe({ miles: 5 }) * 100)}% attend`);
+    addCoef(`Lives ${model.distCap.toFixed(0)}+ miles out`, `${Math.round(probe({ miles: model.distCap }) * 100)}% attend`, '#9c4a3b');
+    addCoef('No ZIP on file', `${Math.round(probe({}) * 100)}% attend`);
+  }
   addCoef('Extra seats filled', `${Math.round(model.companionRate * 100)}%`);
   if (cancellationsDone) addCoef('Cancelled families', 'counted out', '#9c4a3b');
 
@@ -556,19 +667,42 @@ function render() {
   };
   addRow('Families learned from', model.n);
   for (const ev of model.loaded || []) {
-    addRow(`· ${ev.label}`, `${ev.n} families${ev.date ? ` · ${ev.date}` : ''}`);
+    const dist = ev.hasVenue ? `${ev.withMiles} located` : 'no venue set';
+    addRow(`\u00b7 ${ev.label}`, `${ev.n} families${ev.date ? ` \u00b7 ${ev.date}` : ''} \u00b7 ${dist}`);
   }
   addRow('Cancelled by the team', model.cancelledN);
+  addRow('Travel distance in use', model.useDist
+    ? `yes \u00b7 ${Math.round(model.distCoverage * 100)}% of families located`
+    : 'no \u00b7 too few located families to fit it');
+  if (model.useDist) {
+    addRow('Distance settings', `capped at ${model.distCap.toFixed(1)} mi \u00b7 k = ${model.distK}`);
+  }
   addRow('Fit in use', cancellationsDone ? 'after cancellations' : 'before cancellations');
   addRow('Solo turnout', `${Math.round(fit.soloRate * 100)}% of ${fit.soloN}`);
   addRow('Group turnout', `${Math.round(fit.groupRate * 100)}% of ${fit.groupN}`);
 
+  const distPara = model.useDist ? `
+    <p><strong>Travel distance.</strong> Straight-line miles from a family&rsquo;s ZIP to the venue.
+    Distances are capped at ${model.distCap.toFixed(0)} miles, the far edge of what past guest lists
+    actually covered, so a family further out is scored as if they lived at that edge rather than
+    having a probability invented for them from no evidence. The effect is centred, which means a
+    family with no ZIP on file is scored at the average travel effect and is neither rewarded nor
+    penalised for the blank. Both the cap and the curve&rsquo;s steepness are worked out from the
+    training files, so they move as events are added. Right now
+    ${Math.round(model.distCoverage * 100)}% of past families could be located, so read this
+    predictor as a signal about the catchment area rather than a law about driving time.</p>` : `
+    <p><strong>Travel distance.</strong> Not in use. Either too few past families have a ZIP the
+    model recognises, or too few past events have venue coordinates in the manifest. Add
+    <code>lat</code> and <code>lon</code> to the manifest entries to turn it on.</p>`;
+
   $('method').innerHTML = `
-    <p><strong>The model.</strong> A logistic regression on past guest lists with one predictor:
-    whether the family booked more than one ticket. Registration lead time and coast were both
-    tested and dropped, along with graduation year, GPA, distance to the venue and registration
-    order. None of them predicted attendance once a fourth event was added. There is no machine
-    learning here, so every number above can be checked by hand.</p>
+    <p><strong>The model.</strong> A logistic regression on past guest lists with three predictors:
+    whether the family booked more than one ticket, how far ahead they registered, and how far they
+    live from the venue. Lead time is a curve that is only allowed to fall, never rise, because a
+    straight-line version looked convincing on three events and collapsed on five. Graduation year,
+    GPA, coast, registration order, income and education were all tested and none earned a place.
+    There is no machine learning here, so every number above can be checked by hand.</p>
+    ${distPara}
     <p><strong>Cancellations.</strong> A guest marked not going is almost always the events team
     recording what they already know, rather than the guest changing their own mind. Across these
     events only two guests ever did it themselves. So two versions are fitted. Before the team has
@@ -598,7 +732,7 @@ async function handleFiles(files) {
     }
     state.rows = rows;
     state.fileName = file.name;
-    $('dropFile').textContent = `${file.name} · ${rows.filter((r) => !isTestSignup(r)).length} guest rows`;
+    $('dropFile').textContent = `${file.name} \u00b7 ${rows.filter((r) => !isTestSignup(r)).length} guest rows`;
 
     const det = detectTz(rows);
     state.detected = det;
@@ -629,15 +763,18 @@ function init() {
   drop.addEventListener('drop', (e) => handleFiles(e.dataTransfer.files));
 
   ['date', 'tz', 'ci', 'optPending', 'optDeclined'].forEach((id) => $(id).addEventListener('change', render));
+  $('venue').addEventListener('input', () => { syncVenue(); render(); });
   ['sort', 'dir'].forEach((id) => $(id).addEventListener('change', () => renderTable(state.families)));
   $('export').addEventListener('click', () => exportCsv(state.families));
+  syncVenue();
 
   loadTraining().then((model) => {
     state.model = model;
     $('trainChip').innerHTML =
-      `Fitted on <b>${model.n} families</b> from ${model.events.length} past events<br>` +
-      `solo ${Math.round(model.everyone.soloRate * 100)}% · group ${Math.round(model.everyone.groupRate * 100)}% turnout`;
+      `Fitted on <b>${model.n} families</b> from ${model.events.length} past events<br>`
+      + `solo ${Math.round(model.everyone.soloRate * 100)}% \u00b7 group ${Math.round(model.everyone.groupRate * 100)}% turnout`;
     render();
+    refineModel();
   }).catch((err) => {
     state.trainError = err;
     $('trainChip').innerHTML = '<b>No past events loaded</b>';
