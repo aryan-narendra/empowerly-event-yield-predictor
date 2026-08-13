@@ -772,29 +772,14 @@ function buildModel(trainRows, opts = {}) {
     const sol = solveMonotone(X, y, rows.length, p, nHi, lambda, warm);
     const { cLo, J } = projectMonotone(nodes, sol.cHi, nLo);
 
-    // carry uncertainty through: cHi = C w, cLo = J cHi, extras pass through
-    const covW = matInv(sol.H.map((r) => Array.from(r)))
-      || Array.from({ length: p }, (_, i) => Array.from({ length: p }, (_, j) => (i === j ? 1 : 0)));
+    /* No analytic covariance here, deliberately. Inverting the Hessian gives
+       nonsense for this model: the Bernstein columns are collinear by
+       construction, and control points pinned at the monotonicity boundary have
+       no Gaussian sampling distribution at all. Doing it anyway produced
+       standard errors four times the size of the coefficients and a forecast
+       that was flat from zero to everybody. Uncertainty comes from resampling
+       events instead, further down. */
     const q = nLo + (useGroup ? 1 : 0) + (useDist ? 1 : 0);
-    const T = Array.from({ length: q }, () => new Array(p).fill(0));
-    for (let a = 0; a < nLo; a++) {
-      for (let j = 0; j < nHi; j++) {
-        const jv = J[a][j];
-        if (!jv) continue;
-        T[a][0] += jv;                                  // c[j] depends on w[0]
-        for (let s = 1; s <= j; s++) T[a][s] -= jv;     // and on steps up to j
-      }
-    }
-    for (let e = 0; e < q - nLo; e++) T[nLo + e][nHi + e] = 1;
-    const cov = T.map((tr) => T.map((tc) => {
-      let s = 0;
-      for (let a = 0; a < p; a++) {
-        if (!tr[a]) continue;
-        for (let b2 = 0; b2 < p; b2++) if (tc[b2]) s += tr[a] * covW[a][b2] * tc[b2];
-      }
-      return s;
-    }));
-
     const beta = new Array(q);
     for (let a = 0; a < nLo; a++) beta[a] = cLo[a];
     let j = nHi;
@@ -824,8 +809,7 @@ function buildModel(trainRows, opts = {}) {
     };
 
     return {
-      beta, cov, design, terms, warm: sol.w, lambda,
-      se: cov.map((row2, i) => Math.sqrt(Math.max(row2[i], 0))),
+      beta, design, terms, warm: sol.w, lambda, betaDraws: null,
       leadMin: lo, leadMax: hi, distMean, useDist, useGroup, nLo, nHi,
       n: rows.length,
       soloRate: rate((r) => r.isGroup === 0),
@@ -929,17 +913,63 @@ function buildModel(trainRows, opts = {}) {
   const everyone = finish(trainRows, lambda, null);
   const stillOn = finish(remaining.length >= 12 ? remaining : trainRows, lambda, everyone.warm);
 
+  /* ---------- how uncertain the coefficients are ----------
+
+     Resample whole events, with replacement, and refit. Every draw is a real
+     constrained fit, so the monotonicity holds in each one and nothing has to
+     be approximated by a normal distribution that does not apply.
+
+     Events rather than families, because families inside one event are
+     correlated: they saw the same invitation, the same venue, the same weather.
+     With a handful of events the dominant question is what a different evening
+     would have looked like, and resampling families would badly understate it.
+
+     This replaces an analytic covariance that was producing standard errors
+     several times the size of the coefficients themselves, and with them a
+     forecast that stretched from nobody to everybody. */
+  const bootstrapDraws = (rows, lam, draws, warm) => {
+    if (events.length < 2) return null;
+    const byEvent = events.map((ev) => rows.filter((r) => r.eventId === ev));
+    const rng = mulberry32(20260819);
+    const out = [];
+    let seed = warm;                 // each refit starts from the last solution
+    for (let d = 0; d < draws; d++) {
+      const pick = [];
+      for (let i = 0; i < events.length; i++) {
+        pick.push(...byEvent[Math.floor(rng() * events.length)]);
+      }
+      if (new Set(pick.map((r) => r.attended)).size < 2) continue;
+      try {
+        const f = finish(pick, lam, seed);
+        seed = f.warm;
+        out.push(f.beta);
+      } catch (err) { /* a degenerate resample is simply skipped */ }
+    }
+    return out.length >= 8 ? out : null;
+  };
+
   // Of the extra seats a family booked, how many actually walk in when they come.
   const attending = trainRows.filter((r) => r.attended === 1);
   const extraBooked = attending.reduce((s, r) => s + (r.tickets - 1), 0);
   const extraChecked = attending.reduce((s, r) => s + Math.max(r.ticketsChecked - 1, 0), 0);
   const companionRate = extraBooked > 0 ? Math.min(extraChecked / extraBooked, 1) : 0.9;
 
+  /* A dozen resamples already pin the interval to within a person; the larger
+     count in the background pass just smooths its edges. */
+  const draws = opts.bootstrap === 0 ? 0 : (opts.bootstrap || 60);
+  if (draws) {
+    everyone.betaDraws = bootstrapDraws(trainRows, lambda, draws, everyone.warm);
+    stillOn.betaDraws = remaining.length >= 12
+      ? bootstrapDraws(remaining, lambda, draws, stillOn.warm)
+      : everyone.betaDraws;
+  }
+
   return {
     everyone,
     stillOn,
     companionRate,
     lambda,
+    bootstrapN: everyone.betaDraws ? everyone.betaDraws.length : 0,
     n: trainRows.length,
     cancelledN: cancelled.length,
     distCoverage: trainRows.length ? covered.length / trainRows.length : 0,
@@ -983,23 +1013,18 @@ function mulberry32(seed) {
  */
 function simulate(fit, companionRate, families, { draws = 6000, seed = 7 } = {}) {
   const rng = mulberry32(seed);
-  const L = cholesky(fit.cov);
   const p = fit.beta.length;
+  const pool = fit.betaDraws && fit.betaDraws.length ? fit.betaDraws : null;
   const rows = families.map((f) => ({ x: fit.design(f), tickets: f.tickets, forced: f.forcedZero }));
 
   const run = (varyBeta) => {
     const fams = new Array(draws);
     const people = new Array(draws);
     const beta = new Float64Array(p);
-    const z = new Float64Array(p);
     for (let d = 0; d < draws; d++) {
-      if (varyBeta) {
-        for (let i = 0; i < p; i++) z[i] = randn(rng);
-        for (let i = 0; i < p; i++) {
-          let s = fit.beta[i];
-          for (let j = 0; j <= i; j++) s += L[i][j] * z[j];
-          beta[i] = s;
-        }
+      if (varyBeta && pool) {
+        const src = pool[Math.floor(rng() * pool.length)];
+        for (let i = 0; i < p; i++) beta[i] = src[i];
       } else {
         for (let i = 0; i < p; i++) beta[i] = fit.beta[i];
       }
