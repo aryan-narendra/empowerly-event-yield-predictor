@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Event manager v1.1.3</title>
+<title>Event manager v1.3.0</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -29,25 +29,35 @@
     </label>
 
     <div class="controls">
-      <div class="row-2">
-        <div class="field">
-          <label for="date">Event date</label>
-          <input type="date" id="date">
-        </div>
-        <div class="field">
-          <label for="tz">Time zone</label>
-          <select id="tz">
-            <option value="ET">Eastern</option>
-            <option value="CT">Central</option>
-            <option value="MT">Mountain</option>
-            <option value="MST">Arizona</option>
-            <option value="PT">Pacific</option>
-            <option value="AKT">Alaska</option>
-            <option value="HST">Hawaii</option>
-          </select>
-        </div>
+      <div class="field recommended">
+        <label for="date">Event date <span class="rec">recommended</span></label>
+        <input type="date" id="date">
+        <p class="field-note" id="dateNote">Leave blank and the date is read from the
+          filename, or failing that guessed from the guest list.</p>
       </div>
-      <p class="field-note" id="tzNote">Doors at 6:00 PM local.</p>
+
+      <div class="field recommended">
+        <label for="venue">Where it is <span class="rec">recommended</span></label>
+        <input type="text" id="venue" autocomplete="off" spellcheck="false"
+               placeholder="Maggiano's, Santana Row &nbsp;·&nbsp; 94588 &nbsp;·&nbsp; 37.6624, -121.8747">
+        <p class="field-note" id="venueNote">A venue name, a city, a ZIP, or a
+          latitude and longitude pair. Without it the forecast ignores how far
+          guests have to travel.</p>
+      </div>
+
+      <div class="field">
+        <label for="tz">Time zone</label>
+        <select id="tz">
+          <option value="ET">Eastern</option>
+          <option value="CT">Central</option>
+          <option value="MT">Mountain</option>
+          <option value="MST">Arizona</option>
+          <option value="PT">Pacific</option>
+          <option value="AKT">Alaska</option>
+          <option value="HST">Hawaii</option>
+        </select>
+        <p class="field-note" id="tzNote">Doors at 6:00 PM local.</p>
+      </div>
 
       <div class="field">
         <label for="ci">Range shown</label>
@@ -69,10 +79,8 @@
 
       <label class="switch">
         <input type="checkbox" id="optDeclined">
-        <span>Cancellations have been worked through
-          <small><b>Off:</b> nobody is counted out yet, and everyone is scored at rates that allow for
-          the cancellations still to come.<br><b>On:</b> guests marked not going are counted out, and the
-          rest are scored at the higher rate that applies once the list is settled.</small></span>
+        <span>Take “not going” replies at their word
+          <small>Off: replies are ignored and everyone is forecast the same way.</small></span>
       </label>
     </div>
   </section>
@@ -139,7 +147,7 @@
           </select>
           <select id="dir">
             <option value="asc">Ascending</option>
-            <option value="desc" selected>Descending</option>
+            <option value="desc">Descending</option>
           </select>
           <button class="btn" id="export">Download CSV</button>
         </div>
