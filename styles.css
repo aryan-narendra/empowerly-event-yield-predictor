@@ -1,4 +1,4 @@
-/* Empowerly event yield, visual system
+/* Empowerly event yield — visual system
    paper: cool gray-green   ink: deep petrol   signals: pine / brass / brick */
 
 :root {
@@ -397,3 +397,40 @@ footer { font-size: 12px; color: var(--ink-3); padding: 8px 0 30px; }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* ---------- recommended-but-optional fields ---------- */
+
+.field.recommended > label { color: var(--ink); }
+
+.rec {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--brass);
+  background: var(--brass-soft);
+  border-radius: 2px;
+  padding: 1px 5px;
+  margin-left: 6px;
+  vertical-align: 1px;
+}
+
+.field input[type='text'] {
+  font-family: var(--sans);
+  font-size: 14.5px;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 7px 9px;
+  width: 100%;
+}
+
+.field input[type='text']::placeholder { color: var(--ink-3); font-size: 13px; }
+
+.field.recommended input { border-color: var(--brass); }
+.field.recommended input:not(:placeholder-shown),
+.field.recommended input[type='date']:valid { border-color: var(--line); }
+
+.venue-ok { color: var(--pine); }
+.venue-miss { color: var(--brass); }
