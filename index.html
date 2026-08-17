@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Event manager v1.3.0</title>
+<title>Event manager v1.4.2</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -40,8 +40,8 @@
         <label for="venue">Where it is <span class="rec">recommended</span></label>
         <input type="text" id="venue" autocomplete="off" spellcheck="false"
                placeholder="Maggiano's, Santana Row &nbsp;·&nbsp; 94588 &nbsp;·&nbsp; 37.6624, -121.8747">
-        <p class="field-note" id="venueNote">A venue name, a city, a ZIP, or a
-          latitude and longitude pair. Without it the forecast ignores how far
+        <p class="field-note" id="venueNote">A past venue name, a city, a ZIP, or
+          a latitude and longitude pair. Without it the forecast ignores how far
           guests have to travel.</p>
       </div>
 
@@ -80,7 +80,8 @@
       <label class="switch">
         <input type="checkbox" id="optDeclined">
         <span>Take “not going” replies at their word
-          <small>Off: replies are ignored and everyone is forecast the same way.</small></span>
+          <small>Turn this on once every cancellation has been worked through. Those
+            families are then counted out instead of forecast like everyone else.</small></span>
       </label>
     </div>
   </section>
@@ -121,6 +122,24 @@
     </section>
 
     <section class="stats" id="stats"></section>
+
+    <section class="charts charts-growth">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Registrations over time</h2>
+          <span class="chart-key">
+            <span><i style="background:#2c6b57"></i>registered</span>
+            <span><i style="background:#8d7028"></i>approved</span>
+          </span>
+        </div>
+        <div id="growthChart"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Party size</h2></div>
+        <div id="partyChart"></div>
+        <div class="src-list" id="partyList"></div>
+      </div>
+    </section>
 
     <section class="charts">
       <div class="panel">
