@@ -85,7 +85,7 @@ it has pointed the same way every time.
 straight-line version looked convincing on the first three events and collapsed
 once a fourth was added, because that event's whole list registered about five
 weeks out and turned out normally. The curve is fitted with more control points
-than it keeps and then projected down onto fewer, which regularises the sparse
+than it keeps and then projected down onto fewer, which regularizes the sparse
 stretches better than fitting the short curve directly.
 
 **Travel distance** is straight-line miles from a family's ZIP to the venue. It
@@ -96,8 +96,8 @@ when too few families can be located. Three things about it are worth knowing:
   family further out is scored as if they lived at that edge. Without a cap a
   mistyped ZIP is scored at effectively zero probability. One past guest entered
   a ZIP 1,800 miles away and attended.
-- The effect is **centred**, so a family with no ZIP on file sits at the average
-  travel effect and is neither rewarded nor penalised for the blank field.
+- The effect is **centered**, so a family with no ZIP on file sits at the average
+  travel effect and is neither rewarded nor penalized for the blank field.
 - The cap and the curve's steepness are both **worked out from the training
   files** rather than hardcoded, so they move as events are added.
 
@@ -129,6 +129,17 @@ distribution at all. Inverting that matrix produced standard errors several
 times the size of the coefficients, and a forecast that ran flat from nobody to
 everybody.
 
+Uploading an event that has already happened also switches "Take “not going”
+replies at their word" on for you, since a finished event has had its
+cancellations worked through by definition. A note says so, and the switch can
+be turned straight back off; it is set once per upload rather than forced on
+every redraw.
+
+If the file you upload is an event that has already happened, a red rule is
+drawn on both histograms at the real outcome, with a note saying whether it
+landed inside the range or outside it. Nothing is drawn for an event with no
+check-ins, since there is no outcome yet.
+
 The page then runs 6,000 simulated evenings. Each one picks a refit at random
 and flips a coin per family. The reported range is the middle
 50/80/90/95/99/99.9% of those evenings, and the plot shows both the combined
@@ -153,6 +164,32 @@ large constant with a large coefficient describes the same curve as a small one
 with a small coefficient. Selection therefore takes the smallest value within a
 tolerance of the best score rather than the outright winner, which keeps the
 curve on the conservative side of a question the data cannot settle.
+
+## Reading the page
+
+**Registrations over time** counts down to the event: the first sign-up on the
+left, the doors opening at zero on the right. Green is everyone who registered,
+brass the subset whose final status is approved. Whichever matters less to the
+current forecast is washed out and drawn underneath, so ticking "Count guests
+awaiting approval" swaps the emphasis.
+
+A registration is an instant, so the line steps rather than slopes: flat until
+someone signs up, then straight up by one. It stops at the present moment
+instead of running on to the event, and the endpoint carries a dot. While the
+list is still open that dot has a ring breathing behind it; once the event has
+happened the ring is gone and the line reaches the right edge.
+
+One caveat on that chart. Luma records no timestamp for approval, so the brass
+line places each approved family at the moment they registered rather than the
+moment they were waved through. It shows what the list was made of, not how
+fast the approval queue moved.
+
+**Party size** sits beside it, breaking the list into families who booked one
+seat, two, three and so on.
+
+**Every family** gains an attended column, showing check-ins over tickets
+booked, only once the event has happened. An upcoming list has nothing to put
+there, so the column is left out rather than filled with dashes.
 
 ## Setting the venue
 
