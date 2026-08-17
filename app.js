@@ -4,9 +4,12 @@ const $ = (id) => document.getElementById(id);
 const state = {
   model: null, rows: [], families: [], fileName: '', detected: null,
   trainError: null, venue: null, venueText: '', trainRows: null, refining: false,
+  declinedAutoSet: false,
 };
 
 const PINE = '#2c6b57', PINE_SOFT = '#b8d3c7', BRASS_SOFT = '#e3d6ad', INK = '#16262a';
+const BRICK = '#9c4a3b', BRASS = '#8d7028', MUTED_GREEN = '#a9bdb0', MUTED_BRASS = '#cfc4a4';
+const PARTY_COLORS = ['#9fb3a6', '#2c6b57', '#3a5a6e', '#8d7028', '#9c4a3b', '#6b5b8e'];
 const SRC_COLORS = ['#2c6b57', '#3a5a6e', '#8d7028', '#9c4a3b', '#5a7f6d', '#6b5b8e', '#3f7d86', '#a06a35'];
 const NO_SOURCE = '#aab3ad';
 
@@ -107,7 +110,7 @@ async function loadPastEvent(entry) {
 
   const label = entry.label || entry.file.replace(/\.[^.]+$/, '');
 
-  // Already-summarised file: no personal data, nothing to work out.
+  // Already-summarized file: no personal data, nothing to work out.
   if ('lead_days' in rows[0] && 'tickets' in rows[0]) {
     const out = [];
     for (const r of rows) {
@@ -123,7 +126,7 @@ async function loadPastEvent(entry) {
         isGroup: tickets > 1 ? 1 : 0,
         status: Number(r.cancelled) ? 'cancelled' : 'approved',
         zip: '',
-        miles: null,          // anonymised files strip ZIPs, so no distance
+        miles: null,          // anonymized files strip ZIPs, so no distance
       });
     }
     return { label, rows: out, date: entry.date || null, tz: entry.tz || null, venue: null };
@@ -233,11 +236,16 @@ const svgEl = (tag, attrs) => {
  * The inner rule is the spread you would get if the model were exactly right;
  * the outer rule adds the fact that it was fitted on a handful of past events.
  */
-function drawDistribution(host, sim, level, key) {
-  const W = 420, H = 172, padX = 8, top = 8, plotH = 86, ruleY = plotH + 34;
+function drawDistribution(host, sim, level, key, actual) {
+  const W = 420, padX = 8, top = 20, plotH = 86, ruleY = plotH + 46;
+  const H = Number.isFinite(actual) ? 200 : 186;
   const full = sim.full[key], outcome = sim.outcomeOnly[key];
   const outer = interval(full, level), inner = interval(outcome, level);
-  const lo = Math.max(0, Math.min(...full) - 1), hi = Math.max(...full) + 1;
+  const showActual = Number.isFinite(actual);
+  /* The domain stretches to take in the real outcome, so a night that landed
+     outside the forecast is visible rather than clipped off the edge. */
+  const lo = Math.max(0, Math.min(...full, showActual ? actual : Infinity) - 1);
+  const hi = Math.max(...full, showActual ? actual : -Infinity) + 1;
   const span = Math.max(hi - lo, 1);
   const x = (v) => padX + ((v - lo) / span) * (W - padX * 2);
 
@@ -285,15 +293,205 @@ function drawDistribution(host, sim, level, key) {
   band(inner.lo, inner.hi, PINE_SOFT, 12, ruleY);
   svg.appendChild(svgEl('rect', { x: x(outer.median) - 1, y: ruleY - 3, width: 2, height: 18, fill: INK }));
 
+  /* What actually happened, drawn only for events that have already run. */
+  if (showActual) {
+    svg.appendChild(svgEl('line', {
+      x1: x(actual), x2: x(actual), y1: top - 4, y2: top + plotH,
+      stroke: BRICK, 'stroke-width': 2,
+    }));
+    svg.appendChild(svgEl('rect', {
+      x: x(actual) - 1, y: ruleY - 3, width: 2, height: 18, fill: BRICK,
+    }));
+    const lab = svgEl('text', {
+      x: Math.min(Math.max(x(actual), 22), W - 22), y: top - 8,
+      'font-size': 10, fill: BRICK, 'text-anchor': 'middle',
+      'font-family': 'IBM Plex Mono, monospace', 'font-weight': 600,
+    });
+    lab.textContent = `actual ${actual}`;
+    svg.appendChild(lab);
+  }
+
   const cap = svgEl('text', {
     x: padX, y: ruleY + 32, 'font-size': 9.5, fill: '#52646a', 'font-family': 'IBM Plex Mono, monospace',
   });
   cap.textContent = `${outer.lo}\u2013${outer.hi} all in  \u00b7  ${inner.lo}\u2013${inner.hi} if the model were exact`;
+  if (showActual) {
+    const miss = actual < outer.lo || actual > outer.hi;
+    const cap2 = svgEl('text', {
+      x: padX, y: ruleY + 45, 'font-size': 9.5, fill: BRICK, 'font-family': 'IBM Plex Mono, monospace',
+    });
+    cap2.textContent = `actual ${actual}, ${miss ? 'outside' : 'inside'} the range`;
+    svg.appendChild(cap2);
+  }
   svg.appendChild(cap);
 
   host.innerHTML = '';
   host.appendChild(svg);
   return { outer, inner };
+}
+
+/**
+ * Registrations accumulating as the event approaches. The x axis counts down:
+ * the first sign-up on the left, the doors opening at zero on the right.
+ *
+ * A registration is an instant, so the line steps: flat until the moment
+ * someone signs up, then straight up. It stops at the present moment rather
+ * than running to the event, and the endpoint carries a dot.
+ *
+ * Two lines. Green is everyone who registered; brass is the subset whose final
+ * status is approved. Luma records no approval timestamp, so the brass line
+ * places each approved family at the moment they registered, not the moment
+ * they were waved through. It shows composition, not the approval queue.
+ */
+function drawGrowthChart(host, families, includePending, startMs) {
+  host.innerHTML = '';
+  const regs = families
+    .filter((f) => Number.isFinite(f.leadDays))
+    .sort((a, b) => b.leadDays - a.leadDays);
+  if (regs.length < 2) return;
+
+  /* Lead days remaining right now. Registration stamps and startMs are both
+     UTC, so this needs no zone handling of its own: the zone is already baked
+     into startMs by eventStartMs. Past events clamp to the event itself. */
+  const nowLead = Math.max((startMs - Date.now()) / 86400000, 0);
+  const upcoming = startMs > Date.now();
+
+  const maxLead = Math.max(regs[0].leadDays, 0.001);
+  const W = 330, H = 136, padL = 30, padR = 16, top = 10, padB = 24;
+  const plotW = W - padL - padR, plotH = H - top - padB;
+  const x = (lead) => padL + ((maxLead - Math.min(Math.max(lead, nowLead), maxLead)) / maxLead) * plotW;
+
+  /* Step series: horizontal to the sign-up, then vertical by one. */
+  const series = (pred) => {
+    const pts = [[x(maxLead), 0]];
+    let n = 0;
+    for (const f of regs) {
+      if (!pred(f)) continue;
+      pts.push([x(f.leadDays), n]);
+      n += 1;
+      pts.push([x(f.leadDays), n]);
+    }
+    pts.push([x(nowLead), n]);
+    return pts;
+  };
+  const regPts = series(() => true);
+  const appPts = series((f) => f.status === 'approved');
+  const peak = Math.max(regPts[regPts.length - 1][1], 1);
+  const y = (v) => top + plotH - (v / peak) * plotH;
+
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img' });
+  svg.appendChild(svgEl('title', {})).textContent =
+    `${peak} families registered over the ${maxLead.toFixed(0)} days before the event`;
+
+  for (let i = 0; i <= 2; i += 1) {
+    const v = (peak / 2) * i;
+    svg.appendChild(svgEl('line', {
+      x1: padL, x2: W - padR, y1: y(v), y2: y(v), stroke: '#e0e5de', 'stroke-width': 1,
+    }));
+    const lab = svgEl('text', {
+      x: padL - 5, y: y(v) + 3, 'font-size': 8.5, fill: '#7c8b8f', 'text-anchor': 'end',
+      'font-family': 'IBM Plex Mono, monospace',
+    });
+    lab.textContent = Math.round(v);
+    svg.appendChild(lab);
+  }
+
+  const path = (pts) => `M${pts.map(([px, pv]) => `${px.toFixed(1)},${y(pv).toFixed(1)}`).join('L')}`;
+  const line = (pts, color, width) => svg.appendChild(svgEl('path', {
+    d: path(pts), fill: 'none', stroke: color, 'stroke-width': width,
+    'stroke-linejoin': 'miter', 'stroke-linecap': 'butt',
+  }));
+  /* The endpoint marker. The ring only breathes while the list is still open. */
+  const endDot = (pts, color, lead, live) => {
+    const cy = y(pts[pts.length - 1][1]);
+    if (live && upcoming) {
+      const ring = svgEl('circle', { cx: x(lead), cy, r: 3, fill: color });
+      ring.setAttribute('class', 'pulse-ring');
+      svg.appendChild(ring);
+    }
+    svg.appendChild(svgEl('circle', {
+      cx: x(lead), cy, r: 3, fill: color, stroke: '#fafbf8', 'stroke-width': 1.5,
+    }));
+  };
+
+  /* Flip this if the emphasis ever wants inverting. */
+  const dimGreen = includePending;
+  if (dimGreen) {
+    line(regPts, MUTED_GREEN, 1.4);
+    line(appPts, BRASS, 2);
+    endDot(regPts, MUTED_GREEN, nowLead, false);
+    endDot(appPts, BRASS, nowLead, true);
+  } else {
+    line(appPts, MUTED_BRASS, 1.4);
+    line(regPts, PINE, 2);
+    endDot(appPts, MUTED_BRASS, nowLead, false);
+    endDot(regPts, PINE, nowLead, true);
+  }
+
+  for (const d of [maxLead, 0]) {
+    const lab = svgEl('text', {
+      x: d < 0.05 ? W - padR : padL, y: H - padB + 13,
+      'font-size': 8.5, fill: '#7c8b8f', 'text-anchor': d < 0.05 ? 'end' : 'start',
+      'font-family': 'IBM Plex Mono, monospace',
+    });
+    lab.textContent = d < 0.05 ? 'event' : `${Math.round(d)}d out`;
+    svg.appendChild(lab);
+  }
+  if (upcoming) {
+    const nowLab = svgEl('text', {
+      x: Math.min(x(nowLead), W - padR - 2), y: H - padB + 13, 'font-size': 8.5,
+      fill: PINE, 'text-anchor': 'middle', 'font-family': 'IBM Plex Mono, monospace',
+    });
+    nowLab.textContent = 'now';
+    svg.appendChild(nowLab);
+  }
+
+  const key = svgEl('text', {
+    x: padL, y: H - 2, 'font-size': 9, fill: '#52646a',
+    'font-family': 'IBM Plex Mono, monospace',
+  });
+  key.textContent = `${peak} registered  \u00b7  ${appPts[appPts.length - 1][1]} approved`;
+  svg.appendChild(key);
+  host.appendChild(svg);
+}
+
+/** How many families booked one seat, two seats, three, and so on. */
+function drawPartyChart(host, listHost, families) {
+  const counts = new Map();
+  for (const f of families) counts.set(f.tickets, (counts.get(f.tickets) || 0) + 1);
+  const entries = [...counts.entries()].sort((a, b) => a[0] - b[0]);
+  const total = families.length || 1;
+  const W = 200, R = 84, cx = W / 2, cy = 92, pad = 4;
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${cy + R + pad}` });
+  let angle = -Math.PI / 2;
+  entries.forEach(([k, v], i) => {
+    const color = PARTY_COLORS[Math.min(i, PARTY_COLORS.length - 1)];
+    const sweep = (v / total) * Math.PI * 2;
+    const end = angle + sweep;
+    const large = sweep > Math.PI ? 1 : 0;
+    const pt = (r, a) => `${cx + r * Math.cos(a)} ${cy + r * Math.sin(a)}`;
+    const d = entries.length === 1
+      ? `M ${cx - R} ${cy} A ${R} ${R} 0 1 1 ${cx + R} ${cy} A ${R} ${R} 0 1 1 ${cx - R} ${cy} Z`
+      : `M ${cx} ${cy} L ${pt(R, angle)} A ${R} ${R} 0 ${large} 1 ${pt(R, end)} Z`;
+    svg.appendChild(svgEl('path', { d, fill: color, stroke: '#fafbf8', 'stroke-width': 1.5 }));
+    angle = end;
+  });
+  host.innerHTML = '';
+  host.appendChild(svg);
+
+  listHost.innerHTML = '';
+  entries.forEach(([k, v], i) => {
+    const row = document.createElement('div');
+    row.className = 'src-row';
+    const swatch = document.createElement('i');
+    swatch.style.background = PARTY_COLORS[Math.min(i, PARTY_COLORS.length - 1)];
+    const name = document.createElement('span');
+    name.textContent = k === 1 ? 'Solo' : `Group of ${k}`;
+    const num = document.createElement('b');
+    num.textContent = `${v}  ${Math.round((v / total) * 100)}%`;
+    row.append(swatch, name, num);
+    listHost.appendChild(row);
+  });
 }
 
 function drawGradChart(host, families) {
@@ -388,10 +586,10 @@ function drawSourceChart(host, listHost, families) {
 /* ---------- table ---------- */
 
 const COLUMNS = [
-  ['Registrant', 'name'], ['Likely to attend', 'prob'], ['Tickets', 'tickets'],
-  ['Registered', 'registered'], ['Days ahead', 'lead'], ['Miles out', 'miles'],
-  ['Status', 'status'], ['Grad year', 'grad'], ['High school', 'school'],
-  ['ZIP', 'zip'], ['Source', 'source'], ['Email', 'email'],
+  ['Registrant', 'name'], ['Likely to attend', 'prob'], ['Attended', 'attended'], 
+  ['Tickets', 'tickets'], ['Registered', 'registered'], ['Days ahead', 'lead'], 
+  ['Miles out', 'miles'], ['Status', 'status'], ['Grad year', 'grad'], 
+  ['High school', 'school'], ['ZIP', 'zip'], ['Source', 'source'], ['Email', 'email'],
 ];
 
 const fmtDate = (ms) => new Date(ms).toLocaleString(undefined, {
@@ -411,10 +609,24 @@ function sortFamilies(families, key, dir) {
   return [...families].sort((a, b) => mul * cmp(a, b));
 }
 
+/** Check-ins as "2/3". Only ever called when the event has already happened. */
+function attendanceCell(f) {
+  const span = document.createElement('span');
+  span.textContent = `${f.checkedIn}/${f.tickets}`;
+  span.style.color = f.checkedIn > 0 ? PINE : BRICK;
+  span.style.fontWeight = '600';
+  return span;
+}
+
+/** True once anyone has been scanned in, which is what makes an event past. */
+const hasCheckIns = (families) => families.some((f) => f.checkedIn > 0);
+
 function renderTable(families) {
+  const showAttended = hasCheckIns(families);
+  const columns = COLUMNS.filter(([, key]) => key !== 'attended' || showAttended);
   const head = $('thead');
   head.innerHTML = '';
-  for (const [label] of COLUMNS) {
+  for (const [label] of columns) {
     const th = document.createElement('th');
     th.textContent = label;
     head.appendChild(th);
@@ -448,7 +660,7 @@ function renderTable(families) {
     val.textContent = f.inPool ? `${Math.round(f.prob * 100)}%` : '\u2013';
     prob.append(bar, val);
     cell('', prob);
-
+    if (showAttended) cell('c-num', attendanceCell(f));
     cell('c-num', f.tickets);
     cell('c-mono', fmtDate(f.registeredMs));
     cell('c-num', f.leadDays.toFixed(1));
@@ -470,11 +682,14 @@ function renderTable(families) {
 
 function exportCsv(families) {
   const sorted = sortFamilies(families, $('sort').value, $('dir').value);
-  const header = COLUMNS.map(([label]) => label);
+  const showAttended = hasCheckIns(families);
+  const columns = COLUMNS.filter(([, key]) => key !== 'attended' || showAttended);
+  const header = columns.map(([label]) => label);
   const lines = [header.join(',')];
   for (const f of sorted) {
     const row = [
-      f.name, f.inPool ? (f.prob * 100).toFixed(1) + '%' : 'excluded', f.tickets,
+      f.name, f.inPool ? (f.prob * 100).toFixed(1) + '%' : 'excluded',
+      ...(showAttended ? [`${f.checkedIn}/${f.tickets}`] : []), f.tickets,
       new Date(f.registeredMs).toISOString(), f.leadDays.toFixed(2),
       f.miles == null ? '' : f.miles.toFixed(2), f.status,
       f.gradYear || '', f.school, f.zip, f.utm, f.email,
@@ -509,13 +724,13 @@ function syncVenue() {
   const note = $('venueNote');
   if (!text) {
     note.className = 'field-note';
-    note.textContent = 'A venue name, a city, a ZIP, or a latitude and longitude pair. Without it the forecast ignores how far guests have to travel.';
+    note.textContent = 'A past venue name, a city, a ZIP, or a latitude and longitude pair. Without it the forecast ignores how far guests have to travel.';
   } else if (state.venue) {
     note.className = 'field-note venue-ok';
     note.textContent = `Found it: ${state.venue[0].toFixed(4)}, ${state.venue[1].toFixed(4)}. Travel distance is in the forecast.`;
   } else {
     note.className = 'field-note venue-miss';
-    note.textContent = 'Not recognised, so distance is left out. Try a ZIP code, a nearby city, or paste coordinates from a map.';
+    note.textContent = 'Not recognized, so distance is left out. Try a ZIP code, a nearby city, or paste coordinates from a map.';
   }
 }
 
@@ -545,6 +760,19 @@ function render() {
   const families = buildFamilies(state.rows, startMs);
   attachDistance(families, state.venue);
 
+  /* A finished event has had its cancellations worked through by definition,
+     so the switch turns itself on. Done once per upload rather than every
+     render, which leaves it free to be turned back off by hand. */
+  const past = hasCheckIns(families);
+  let autoDeclined = false;
+  if (past && !state.declinedAutoSet) {
+    state.declinedAutoSet = true;
+    if (!$('optDeclined').checked) {
+      $('optDeclined').checked = true;
+      autoDeclined = true;
+    }
+  }
+
   const includePending = $('optPending').checked;
   const cancellationsDone = $('optDeclined').checked;
   const fit = cancellationsDone ? model.stillOn : model.everyone;
@@ -565,6 +793,9 @@ function render() {
   }
 
   const notes = [];
+  if (autoDeclined) {
+    notes.push('This event has already happened, so \u201cnot going\u201d replies are being taken at their word. Turn that switch off to forecast those families like everyone else.');
+  }
   for (const s of model.skipped || []) notes.push(`Skipped in the training folder: ${s}.`);
   if (state.venueText && !state.venue) {
     notes.push('The venue could not be located, so travel distance is not part of this forecast.');
@@ -572,15 +803,21 @@ function render() {
   if (state.venue && model.useDist) {
     const known = pool.filter((f) => f.miles != null).length;
     if (known < pool.length * 0.5) {
-      notes.push(`Only ${known} of ${pool.length} families have a ZIP the model recognises, so distance is doing little work on this list.`);
+      notes.push(`Only ${known} of ${pool.length} families have a ZIP the model recognizes, so distance is doing little work on this list.`);
     }
   }
   $('alert').innerHTML = notes.map((n) => `<div class="alert">${n}</div>`).join('');
 
   const level = Number($('ci').value);
   const sim = simulate(fit, model.companionRate, pool, { draws: 6000 });
-  const people = drawDistribution($('peoplePlot'), sim, level, 'people');
-  const fams = drawDistribution($('familyPlot'), sim, level, 'fams');
+
+  /* Only a finished event has check-ins, and only then is there a real
+     outcome to draw against the forecast. */
+  const actualPeople = past ? pool.reduce((s, f) => s + f.checkedIn, 0) : undefined;
+  const actualFams = past ? pool.filter((f) => f.checkedIn > 0).length : undefined;
+
+  const people = drawDistribution($('peoplePlot'), sim, level, 'people', actualPeople);
+  const fams = drawDistribution($('familyPlot'), sim, level, 'fams', actualFams);
 
   const pct = level >= 0.99 ? (level * 100).toFixed(1).replace(/\.0$/, '') : Math.round(level * 100);
   $('peopleRange').innerHTML = `${people.outer.lo}<span class="to">to</span>${people.outer.hi}`;
@@ -591,9 +828,6 @@ function render() {
 
   const booked = pool.reduce((s, f) => s + f.tickets, 0);
   const approved = families.filter((f) => f.status === 'approved');
-  const likely = pool.filter((f) => f.prob >= 0.6).length;
-  const unsure = pool.filter((f) => f.prob >= 0.3 && f.prob < 0.6).length;
-  const unlikely = pool.filter((f) => f.prob < 0.3).length;
   const groups = pool.filter((f) => f.isGroup).length;
   const pending = families.filter((f) => f.status === 'pending').length;
   const farOut = pool.filter((f) => f.miles != null && f.miles > model.distCap).length;
@@ -604,16 +838,19 @@ function render() {
     statCard('Headcount to plan for', people.outer.hi, `upper end of the ${pct}% range`),
     statCard('If everyone showed', approved.reduce((s, f) => s + f.tickets, 0), `${approved.length} approved families`),
     statCard('Empty seats expected', Math.max(booked - Math.round(sim.expected.people), 0), `of ${booked} tickets booked`),
-    statCard('Likely to come', likely, `${unsure} on the fence \u00b7 ${unlikely} unlikely`),
     statCard('Booked as a group', `${groups}/${pool.length}`, 'groups show up far more often'),
     statCard('Awaiting approval', pending, includePending ? 'counted in the forecast' : 'not counted'),
     statCard('Cancelled', families.filter((f) => f.status === 'cancelled').length,
       cancellationsDone ? 'counted as not attending' : 'forecast like everyone else'),
   );
+  /* Kept in the same row rather than dropped onto a slab of its own. */
   if (model.useDist && state.venue) {
     stats.append(statCard('Beyond the usual radius', farOut,
       `scored at the ${model.distCap.toFixed(0)} mile edge, not further`));
   }
+
+  drawGrowthChart($('growthChart'), families, includePending, startMs);
+  drawPartyChart($('partyChart'), $('partyList'), pool);
 
   drawGradChart($('gradChart'), pool);
   $('gradHint').textContent = `${pool.filter((f) => !f.gradYear).length} not reported`;
@@ -622,14 +859,14 @@ function render() {
 
   const coefs = $('coefs');
   coefs.innerHTML = '';
-  const addCoef = (k, v, colour) => {
+  const addCoef = (k, v, color) => {
     const row = document.createElement('div');
     row.className = 'coef-row';
     const kk = document.createElement('span');
     kk.textContent = k;
     const vv = document.createElement('b');
     vv.textContent = v;
-    if (colour) vv.style.color = colour;
+    if (color) vv.style.color = color;
     row.append(kk, vv);
     coefs.appendChild(row);
   };
@@ -685,14 +922,14 @@ function render() {
     <p><strong>Travel distance.</strong> Straight-line miles from a family&rsquo;s ZIP to the venue.
     Distances are capped at ${model.distCap.toFixed(0)} miles, the far edge of what past guest lists
     actually covered, so a family further out is scored as if they lived at that edge rather than
-    having a probability invented for them from no evidence. The effect is centred, which means a
+    having a probability invented for them from no evidence. The effect is centered, which means a
     family with no ZIP on file is scored at the average travel effect and is neither rewarded nor
-    penalised for the blank. Both the cap and the curve&rsquo;s steepness are worked out from the
+    penalized for the blank. Both the cap and the curve&rsquo;s steepness are worked out from the
     training files, so they move as events are added. Right now
     ${Math.round(model.distCoverage * 100)}% of past families could be located, so read this
     predictor as a signal about the catchment area rather than a law about driving time.</p>` : `
     <p><strong>Travel distance.</strong> Not in use. Either too few past families have a ZIP the
-    model recognises, or too few past events have venue coordinates in the manifest. Add
+    model recognizes, or too few past events have venue coordinates in the manifest. Add
     <code>lat</code> and <code>lon</code> to the manifest entries to turn it on.</p>`;
 
   $('method').innerHTML = `
@@ -737,6 +974,7 @@ async function handleFiles(files) {
     }
     state.rows = rows;
     state.fileName = file.name;
+    state.declinedAutoSet = false;   // a fresh list gets a fresh look at the switch
     $('dropFile').textContent = `${file.name} \u00b7 ${rows.filter((r) => !isTestSignup(r)).length} guest rows`;
 
     const det = detectTz(rows);
