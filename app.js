@@ -724,13 +724,13 @@ function syncVenue() {
   const note = $('venueNote');
   if (!text) {
     note.className = 'field-note';
-    note.textContent = 'A past venue name, a city, a ZIP, or a latitude and longitude pair. Without it the forecast ignores how far guests have to travel.';
+    note.textContent = 'Any US ZIP, a past venue name, or a latitude and longitude pair. Without it the forecast ignores how far guests have to travel.';
   } else if (state.venue) {
     note.className = 'field-note venue-ok';
     note.textContent = `Found it: ${state.venue[0].toFixed(4)}, ${state.venue[1].toFixed(4)}. Travel distance is in the forecast.`;
   } else {
     note.className = 'field-note venue-miss';
-    note.textContent = 'Not recognized, so distance is left out. Try a ZIP code, a nearby city, or paste coordinates from a map.';
+    note.textContent = 'Not recognized, so distance is left out. Try the venue ZIP, or paste coordinates from a map.';
   }
 }
 
