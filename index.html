@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Event manager v1.4.2</title>
+<title>Event manager v1.4.3</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -40,8 +40,8 @@
         <label for="venue">Where it is <span class="rec">recommended</span></label>
         <input type="text" id="venue" autocomplete="off" spellcheck="false"
                placeholder="Maggiano's, Santana Row &nbsp;·&nbsp; 94588 &nbsp;·&nbsp; 37.6624, -121.8747">
-        <p class="field-note" id="venueNote">A past venue name, a city, a ZIP, or
-          a latitude and longitude pair. Without it the forecast ignores how far
+        <p class="field-note" id="venueNote">Any US ZIP, a past venue name, or a
+          latitude and longitude pair. Without it the forecast ignores how far
           guests have to travel.</p>
       </div>
 
@@ -201,6 +201,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="zips.js"></script>
 <script src="model.js"></script>
 <script src="app.js"></script>
 </body>
