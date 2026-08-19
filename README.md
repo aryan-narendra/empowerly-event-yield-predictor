@@ -150,9 +150,19 @@ opened months early is scored at that edge rather than extrapolated past it.
 
 ### Two-stage fit
 
-Two tuning constants are chosen by leave-one-event-out: the penalty on the lead
-curve's shape and the constant in the distance transform. Families inside one
-event are correlated, so a random split would flatter the model.
+Two tuning constants can be chosen by leave-one-event-out: the penalty on the
+lead curve's shape and the constant in the distance transform. Families inside
+one event are correlated, so a random split would flatter the model.
+
+**Both searches are off below eight events, and at six they are off.** Measured
+on the six events currently in `training/`, choosing the shape penalty per fold
+scored 0.5724 against 0.5598 for the pinned default, with mean headcount error
+4.25 against 3.55. The inner leave-one-event-out runs on five events, which is
+too few to separate one penalty from another, so it fits fold noise. The
+distance constant is worse still: log loss moves by 0.002 across the whole grid
+from k=3 to k=60, so the search is choosing between values the data cannot
+distinguish. The code is kept because the argument reverses once the inner
+split has enough events to mean something.
 
 That search is most of the cost of a page load, so the page fits twice. The
 first fit holds both constants at their defaults and lands in tens of
@@ -212,20 +222,37 @@ the venue up in any map app, right-click the pin, and paste the pair. An event
 with no coordinates still teaches group booking and lead time; it just sits out
 of the distance term.
 
-For the **upcoming event**, use the "Where it is" box on the page. It accepts a
-venue name, a city, a ZIP code, or a coordinate pair, and it tells you what it
-resolved to. Lookup is entirely local, so nothing about an unannounced event
-leaves the browser.
+For the **upcoming event**, use the "Where it is" box on the page. Any US ZIP
+works, as does a past venue name or a coordinate pair, and the box tells you
+what it resolved to so a wrong guess is visible before it reaches the forecast.
+A full street address works too: the last five-digit run wins, so a house
+number that happens to be a real ZIP elsewhere does not hijack the lookup.
+Lookup is entirely local, so nothing about an unannounced event leaves the
+browser.
 
-ZIP centroids are built into `model.js` for every ZIP seen so far. An unfamiliar
-ZIP yields no distance and that family is scored at the average travel effect,
-so new markets work immediately and get sharper once their ZIPs are added.
+ZIP centroids for all 42,555 US ZIP codes live in `zips.js`, so a new market
+works at full distance coverage from its first event with nothing to add by
+hand. A ZIP that is not a real ZIP still yields no distance, and that family is
+scored at the average travel effect.
+
+The table is packed rather than written out as an object. Records are sorted by
+ZIP and grouped by the first three digits, with a 1,001-entry directory in
+front, so a lookup jumps to its group and scans at most 99 records. Latitude
+and longitude are three base-64 characters each, which puts the worst
+round-trip error near 390 feet, far below what a ZIP centroid can resolve in
+the first place. The file is 335 KB, about 214 KB gzipped, and nothing is
+parsed at load: lookups read the string directly, so there is no startup cost
+and no 42,555-entry object in memory.
+
+Regenerate it from the npm `zipcodes` package if the table ever needs
+refreshing.
 
 ## Files
 
 ```
 index.html            page
 styles.css            visual system
+zips.js               packed US ZIP centroid table
 model.js              parsing, logistic fit, simulation
 app.js                interface
 training/manifest.json  which past events to learn from
