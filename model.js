@@ -6,9 +6,9 @@
      lead      how far ahead they registered, as a monotone distilled curve
      distance  how far their ZIP is from the venue, on a saturating scale
 
-   Distance is centred on the training mean, so a family with no usable ZIP
+   Distance is centered on the training mean, so a family with no usable ZIP
    scores exactly at the average distance contribution and is neither rewarded
-   nor penalised for the missing field. Everything is fitted in one pass. */
+   nor penalized for the missing field. Everything is fitted in one pass. */
 
 /* ---------- people who must never appear anywhere ---------- */
 
@@ -91,31 +91,14 @@ const regionForTz = (tz) => (EAST_TZ.has(tz) ? 'East' : 'West');
 
 /* ---------- geography ---------- */
 
-/* ZIP centroids for every ZIP seen in the guest lists so far. An unknown ZIP
-   simply yields no distance, and that family is scored at the average distance
-   contribution. Extend this table as new markets appear. */
-const ZIP_CENTROIDS = {
-  '08055': [39.8637, -74.8223], '08057': [39.9683, -74.9533],
-  '08226': [39.2709, -74.5875], '08540': [40.3666, -74.6408],
-  '19118': [40.0723, -75.2034], '19120': [40.0343, -75.1213],
-  '94022': [37.3814, -122.1258], '94024': [37.3547, -122.0862],
-  '94025': [37.4396, -122.1864], '94070': [37.4969, -122.2674],
-  '94087': [37.3502, -122.0349], '94301': [37.4443, -122.1497],
-  '94303': [37.4673, -122.1388], '94306': [37.4180, -122.1274],
-  '94403': [37.5395, -122.2998], '94404': [37.5538, -122.2700],
-  '94526': [37.8140, -121.9660], '94536': [37.5605, -121.9999],
-  '94538': [37.5308, -121.9712], '94539': [37.5176, -121.9287],
-  '94555': [37.5735, -122.0469], '94558': [38.3047, -122.2864],
-  '94568': [37.7161, -121.9226], '94582': [37.7621, -121.9140],
-  '94588': [37.6873, -121.8957], '95014': [37.3180, -122.0449],
-  '95030': [37.2296, -121.9834], '95032': [37.2417, -121.9554],
-  '95033': [37.1539, -121.9816], '95035': [37.4352, -121.8950],
-  '95051': [37.3483, -121.9844], '95054': [37.3924, -121.9623],
-  '95118': [37.2568, -121.8896], '95120': [37.2144, -121.8574],
-  '95124': [37.2563, -121.9229], '95126': [37.3249, -121.9153],
-  '95129': [37.3066, -122.0002], '95130': [37.2886, -121.9818],
-  '95391': [37.7658, -121.5391],
-};
+/* Centroids for every US ZIP live in zips.js, which is loaded before this
+   file in the browser. Keeping them out of here keeps this file readable and
+   lets the table be regenerated without touching the model. An unknown ZIP
+   still yields no distance, and that family is scored at the average distance
+   contribution, so nothing breaks in a brand new market. */
+const centroidOf = (typeof zipCentroid !== 'undefined')
+  ? zipCentroid
+  : (typeof require !== 'undefined' ? require('./zips.js').zipCentroid : () => null);
 
 /* Free-text venue lookup, so the page can accept "Maggiano's, Santana Row" or
    "downtown Pleasanton" rather than demanding coordinates. Matched on any
@@ -150,8 +133,16 @@ function resolveVenue(text) {
     const lon = parseFloat(pair[2]);
     if (Math.abs(lat) <= 90 && Math.abs(lon) <= 180) return [lat, lon];
   }
-  const zip = s.match(/\b(\d{5})\b/);
-  if (zip && ZIP_CENTROIDS[zip[1]]) return ZIP_CENTROIDS[zip[1]];
+  /* Last five-digit run first: in a written address the ZIP comes at the end,
+     so "12345 Main St, Pleasanton 94566" should resolve to Pleasanton rather
+     than to the house number, which happens to be a real ZIP in Schenectady. */
+  const zips = s.match(/\b\d{5}\b/g);
+  if (zips) {
+    for (let i = zips.length - 1; i >= 0; i--) {
+      const c = centroidOf(zips[i]);
+      if (c) return c;
+    }
+  }
   const low = norm(s);
   for (const [key, coord] of VENUE_ALIASES) if (low.includes(key)) return coord;
   return null;
@@ -203,6 +194,15 @@ const DIST_K_GRID = [3, 5, 8, 12, 18, 26, 40, 60];
    leave-one-event-out work runs. Sits mid-grid, in the flat region. */
 const DEFAULT_DIST_K = 12;
 const DIST_K_TOL = 0.005;        // log loss slack for preferring a smaller k
+/* Below this many events the two tuning searches are skipped and the defaults
+   stand. Measured on six events: choosing the shape penalty per fold scored
+   0.5724 against 0.5598 for the pinned default, and mean headcount error 4.25
+   against 3.55. The inner leave-one-event-out runs on five events, which is
+   too few to tell one penalty from another, so the search chases fold noise
+   and adds variance instead of removing bias. It also costs most of a page
+   load. The code stays because the argument reverses once there are enough
+   events for the inner split to mean something. */
+const SEARCH_MIN_EVENTS = 8;
 const DIST_CLAMP_PCTL = 0.85;    // clamp miles at this quantile of the training set
 const DIST_MIN_FAMILIES = 40;    // below this, distance is not fitted at all
 const DIST_MIN_EVENTS = 3;
@@ -224,9 +224,7 @@ const distanceScale = (miles, k, cap) => {
 /** Miles from a family's ZIP to the venue, or null when it cannot be worked out. */
 function familyMiles(fam, venue) {
   if (!venue) return null;
-  const m = String(fam.zip == null ? '' : fam.zip).match(/(\d{5})/);
-  if (!m) return null;
-  const home = ZIP_CENTROIDS[m[1]];
+  const home = centroidOf(fam.zip);
   if (!home) return null;
   const miles = haversineMiles(home, venue);
   /* No upper cutoff here on purpose. A wild ZIP is handled by the clamp in the
@@ -541,7 +539,7 @@ function solveMonotone(X, y, n, p, nCtrl, lambda, warm) {
    with the same non-increasing constraint. Fitting a high-degree curve and
    projecting down beats fitting the low-degree curve directly: the two search
    different spaces, and the projection is scored on an even grid rather than
-   weighted by where the data happens to pile up, which regularises the sparse
+   weighted by where the data happens to pile up, which regularizes the sparse
    regions.
 
    The integrand is a polynomial, so Gauss-Legendre nodes make this an exact
@@ -677,7 +675,7 @@ const LAMBDA_GRID = [0.003, 0.012, 0.045, 0.17, 0.6];
 /* Used when the caller skips the search. Chosen from the six-event grid; it
    sits in the flat part of the LOEO curve, so a page that paints with this and
    refines afterwards shows the same numbers either way in most cases. */
-const DEFAULT_LAMBDA = 0.012;
+const DEFAULT_LAMBDA = 0.003;
 
 /**
  * Predictors: group booking, registration lead time, distance to the venue.
@@ -690,11 +688,11 @@ const DEFAULT_LAMBDA = 0.012;
  * first stretch, and refuses to invent a recovery in the far tail that rests
  * on one event.
  *
- * Distance is centred on the training mean before it enters. A family with no
+ * Distance is centered on the training mean before it enters. A family with no
  * usable ZIP therefore contributes exactly zero, which is the average, so the
  * missing field neither helps nor hurts them. This matters because a missing
  * ZIP is not missing at random right now: families added on the back end from
- * a warm referral never see the form, and they attend at a high rate. Centring
+ * a warm referral never see the form, and they attend at a high rate. Centering
  * keeps that out of the model rather than letting distance quietly stand in
  * for acquisition channel. Any event with no venue set contributes nothing to
  * the distance term but still trains group and lead time.
@@ -720,7 +718,7 @@ function buildModel(trainRows, opts = {}) {
   const leadMax = Math.max(...leads);
 
   /* Distance. Everything here is derived from the training rows, so adding a
-     new event with a venue changes the clamp, the centring and k on the next
+     new event with a venue changes the clamp, the centering and k on the next
      load with nothing to edit by hand. */
   const covered = trainRows.filter((r) => r.miles != null);
   const distEvents = new Set(covered.map((r) => r.eventId)).size;
@@ -731,13 +729,13 @@ function buildModel(trainRows, opts = {}) {
   /* k is chosen below by leave-one-event-out; this holds whatever is current. */
   let distK = opts.distK != null ? opts.distK : DEFAULT_DIST_K;
   let distMean = 0;
-  const recentre = (rows) => {
+  const recenter = (rows) => {
     let s = 0;
     let n = 0;
     for (const r of rows) if (r.miles != null) { s += distanceScale(r.miles, distK, distCap); n += 1; }
     distMean = n ? s / n : 0;
   };
-  recentre(trainRows);
+  recenter(trainRows);
   const distTerm = (row) => (useDist && row.miles != null
     ? distanceScale(row.miles, distK, distCap) - distMean
     : 0);
@@ -746,7 +744,7 @@ function buildModel(trainRows, opts = {}) {
   const p = nHi + (useGroup ? 1 : 0) + (useDist ? 1 : 0);
   const nodes = projectionNodes(nHi, nLo);
 
-  /* Design in the fitting parametrisation: [1, -(B L), group, distance].
+  /* Design in the fitting parameterization: [1, -(B L), group, distance].
      Packed flat and row-major so the solver walks contiguous memory. */
   const packDesign = (rows, lo, hi) => {
     const X = new Float64Array(rows.length * p);
@@ -868,7 +866,7 @@ function buildModel(trainRows, opts = {}) {
   };
 
   const chooseLambda = (rows) => {
-    if (events.length < 3) return DEFAULT_LAMBDA;
+    if (events.length < SEARCH_MIN_EVENTS) return DEFAULT_LAMBDA;
     const prep = makeFolds(rows);
     if (!prep.length) return DEFAULT_LAMBDA;
     let best = null;
@@ -883,11 +881,11 @@ function buildModel(trainRows, opts = {}) {
      pair jointly would be 40 combinations rather than 13 for no measurable
      gain, since the two barely interact. */
   const chooseK = (rows) => {
-    if (!useDist || events.length < DIST_MIN_EVENTS) return distK;
+    if (!useDist || events.length < SEARCH_MIN_EVENTS) return distK;
     const scores = [];
     for (const k of DIST_K_GRID) {
       distK = k;
-      recentre(rows);
+      recenter(rows);
       scores.push({ k, loss: scoreLambda(rows, DEFAULT_LAMBDA) });
     }
     const best = Math.min(...scores.map((s) => s.loss));
@@ -908,7 +906,7 @@ function buildModel(trainRows, opts = {}) {
      callback with a plain buildModel(rows), swapping the numbers only if the
      chosen penalty actually differs. */
   distK = opts.distK != null ? opts.distK : chooseK(trainRows);
-  recentre(trainRows);
+  recenter(trainRows);
   const lambda = opts.lambda != null ? opts.lambda : chooseLambda(trainRows);
   const everyone = finish(trainRows, lambda, null);
   const stillOn = finish(remaining.length >= 12 ? remaining : trainRows, lambda, everyone.warm);
@@ -1087,6 +1085,6 @@ if (typeof module !== 'undefined') {
     buildFamilies, buildModel, predictOne, simulate, interval, sigmoid,
     resolveVenue, haversineMiles, familyMiles, attachDistance, distanceScale,
     LAMBDA_GRID, DEFAULT_LAMBDA, DIST_K_GRID, DEFAULT_DIST_K, DIST_CLAMP_PCTL, quantile,
-    ZIP_CENTROIDS, VENUE_ALIASES, TZ_LABEL, TZ_OFFSET,
+    centroidOf, VENUE_ALIASES, TZ_LABEL, TZ_OFFSET,
   };
 }
