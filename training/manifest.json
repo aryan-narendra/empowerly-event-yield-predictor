@@ -43,6 +43,13 @@
       "venue": "Maggiano's Little Italy, 3055 Olin Ave, San Jose",
       "lat": 37.3210,
       "lon": -121.9475
+    },
+    {
+      "file": "2026-08-19-pleasanton.csv",
+      "label": "Pleasanton (Aug 19)",
+      "venue": "DoubleTree by Hilton Hotel Pleasanton, 7050 Johnson Dr, Pleasanton",
+      "lat": 37.700278,
+      "lon": -121.918159
     }
   ]
 }
