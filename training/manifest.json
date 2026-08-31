@@ -50,6 +50,20 @@
       "venue": "DoubleTree by Hilton Hotel Pleasanton, 7050 Johnson Dr, Pleasanton",
       "lat": 37.700278,
       "lon": -121.918159
+    },
+    {
+      "file": "2026-08-26-fremont.csv",
+      "label": "Fremont (Aug 26)",
+      "venue": "Bistro 880 & Bar, 39900 Balentine Dr, Newark",
+      "lat": 37.522758,
+      "lon": -122.004554
+    },
+    {
+      "file": "2026-07-29-fremont.csv",
+      "label": "Fremont (Jul 29)",
+      "venue": "Bistro 880 & Bar, 39900 Balentine Dr, Newark",
+      "lat": 37.522758,
+      "lon": -122.004554
     }
   ]
 }
