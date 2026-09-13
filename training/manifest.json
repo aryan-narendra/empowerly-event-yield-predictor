@@ -64,6 +64,13 @@
       "venue": "Bistro 880 & Bar, 39900 Balentine Dr, Newark",
       "lat": 37.522758,
       "lon": -122.004554
+    },
+    {
+      "file": "2026-09-08-walnut-creek.csv",
+      "label": "Walnut Creek (Sep 8)",
+      "venue": "Embassy Suites by Hilton Walnut Creek, 1345 Treat Blvd, Walnut Creek",
+      "lat": 37.9273229,
+      "lon": -122.0577841
     }
   ]
 }
