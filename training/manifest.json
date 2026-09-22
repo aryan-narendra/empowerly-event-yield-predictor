@@ -71,6 +71,13 @@
       "venue": "Embassy Suites by Hilton Walnut Creek, 1345 Treat Blvd, Walnut Creek",
       "lat": 37.9273229,
       "lon": -122.0577841
+    },
+    {
+      "file": "2026-09-17-sommerville.csv",
+      "label": "Somerville (Sep 17)",
+      "venue": "Verve Restaurant, 18 E Main St, Somerville, NJ 08876",
+      "lat": 40.5676,
+      "lon": -74.6115
     }
   ]
 }
