@@ -142,7 +142,8 @@ async function loadPastEvent(entry) {
   // else the evening the guests were actually scanned in.
   const fromName = (entry.file.match(/(\d{4}-\d{2}-\d{2})/) || [])[1];
   const date = entry.date || fromName || localDate(median(checkIns), tz);
-  const startMs = eventStartMs(date, tz);
+  const startHour = Number.isFinite(entry.startHour) ? entry.startHour : 18;
+  const startMs = eventStartMs(date, tz) + (startHour - 18) * 3600000;
   const region = entry.region || regionForTz(tz);
 
   /* Venue: explicit coordinates win, then the free-text venue field. Without
