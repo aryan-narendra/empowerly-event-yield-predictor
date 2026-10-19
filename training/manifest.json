@@ -1,5 +1,5 @@
 {
-  "note": "Finished events the model learns from. Drop a Luma guest export in this folder, name it starting with the event date (2026-08-12-princeton.csv), and add a line below. On GitHub Pages this folder is also read directly from the repo, so the manifest is only a fallback. Optional per-event keys: label, date, tz, region, venue, lat, lon.",
+  "note": "Finished events the model learns from. Drop a Luma guest export in this folder, name it starting with the event date (2026-08-12-princeton.csv), and add a line below. On GitHub Pages this folder is also read directly from the repo, so the manifest is only a fallback. Optional per-event keys: label, date, tz, region, venue, lat, lon, startHour, venueSource.",
   "venueNote": "lat and lon are the event venue map pin used for the distance predictor. Venue names, full addresses and coordinates were verified against each event's Luma page and linked map on 2026-10-19; venueSource records that page. An event with no coordinates still trains group booking and lead time and contributes nothing to the distance term.",
   "events": [
     {
@@ -8,7 +8,9 @@
       "venue": "Suspiro, 3060 Olsen Dr Suite 20, San Jose, CA 95128",
       "lat": 37.319157,
       "lon": -121.9476169,
-      "venueSource": "https://luma.com/empowerly-south-bay-jun-30"
+      "venueSource": "https://luma.com/empowerly-south-bay-jun-30",
+      "date": "2026-06-30",
+      "tz": "PT"
     },
     {
       "file": "2026-07-14-bay-area.csv",
@@ -16,7 +18,9 @@
       "venue": "Cetrella, 160 State St, Los Altos, CA 94022",
       "lat": 37.3800489,
       "lon": -122.1160575,
-      "venueSource": "https://luma.com/empowerly-los-altos-jul-14"
+      "venueSource": "https://luma.com/empowerly-los-altos-jul-14",
+      "date": "2026-07-14",
+      "tz": "PT"
     },
     {
       "file": "2026-07-16-philadelphia.csv",
@@ -24,7 +28,9 @@
       "venue": "Fitler Club, 24 S 24th St, Philadelphia, PA 19103",
       "lat": 39.9534882,
       "lon": -75.179144,
-      "venueSource": "https://luma.com/empowerly-philadelphia-dinner-jul-16"
+      "venueSource": "https://luma.com/empowerly-philadelphia-dinner-jul-16",
+      "date": "2026-07-16",
+      "tz": "ET"
     },
     {
       "file": "2026-07-30-palo-alto.csv",
@@ -32,7 +38,9 @@
       "venue": "478 Anton Ct, Palo Alto, CA 94301",
       "lat": 37.4322279,
       "lon": -122.1354395,
-      "venueSource": "https://luma.com/empowerly-palo-alto-jul-30"
+      "venueSource": "https://luma.com/empowerly-palo-alto-jul-30",
+      "date": "2026-07-30",
+      "tz": "PT"
     },
     {
       "file": "2026-08-04-palo-alto.csv",
@@ -40,7 +48,9 @@
       "venue": "MacArthur Park Restaurant and Bar, 27 University Ave, Palo Alto, CA 94301",
       "lat": 37.4430264,
       "lon": -122.1655246,
-      "venueSource": "https://luma.com/palo-alto-aug-4"
+      "venueSource": "https://luma.com/palo-alto-aug-4",
+      "date": "2026-08-04",
+      "tz": "PT"
     },
     {
       "file": "2026-08-12-san-jose.csv",
@@ -48,7 +58,9 @@
       "venue": "Maggiano's Little Italy, 3055 Olin Ave Ste 1000, San Jose, CA 95128",
       "lat": 37.3207916,
       "lon": -121.9497552,
-      "venueSource": "https://luma.com/san-jose-aug-12"
+      "venueSource": "https://luma.com/san-jose-aug-12",
+      "date": "2026-08-12",
+      "tz": "PT"
     },
     {
       "file": "2026-08-19-pleasanton.csv",
@@ -56,7 +68,9 @@
       "venue": "DoubleTree by Hilton Hotel Pleasanton at the Club, 7050 Johnson Dr, Pleasanton, CA 94588",
       "lat": 37.700278,
       "lon": -121.918159,
-      "venueSource": "https://luma.com/tri-valley-aug-19"
+      "venueSource": "https://luma.com/tri-valley-aug-19",
+      "date": "2026-08-19",
+      "tz": "PT"
     },
     {
       "file": "2026-08-26-fremont.csv",
@@ -64,7 +78,9 @@
       "venue": "Bistro 880 & Bar, 39900 Balentine Dr, Newark, CA 94560",
       "lat": 37.5220379,
       "lon": -121.9911772,
-      "venueSource": "https://luma.com/fremont-aug-26"
+      "venueSource": "https://luma.com/fremont-aug-26",
+      "date": "2026-08-26",
+      "tz": "PT"
     },
     {
       "file": "2026-07-29-fremont.csv",
@@ -72,7 +88,9 @@
       "venue": "Bistro 880 & Bar, 39900 Balentine Dr, Newark, CA 94560",
       "lat": 37.5220379,
       "lon": -121.9911772,
-      "venueSource": "https://luma.com/empowerly-fremont-1"
+      "venueSource": "https://luma.com/empowerly-fremont-1",
+      "date": "2026-07-29",
+      "tz": "PT"
     },
     {
       "file": "2026-09-08-walnut-creek.csv",
@@ -80,7 +98,9 @@
       "venue": "Embassy Suites by Hilton Walnut Creek, 1345 Treat Blvd, Walnut Creek, CA 94597",
       "lat": 37.9272429,
       "lon": -122.0581765,
-      "venueSource": "https://luma.com/empowerly-walnut-creek-1"
+      "venueSource": "https://luma.com/empowerly-walnut-creek-1",
+      "date": "2026-09-08",
+      "tz": "PT"
     },
     {
       "file": "2026-09-17-sommerville.csv",
@@ -88,7 +108,9 @@
       "venue": "Verve Restaurant, 18 E Main St, Somerville, NJ 08876",
       "lat": 40.56785,
       "lon": -74.6112026,
-      "venueSource": "https://luma.com/empowerly-bridgewater-1"
+      "venueSource": "https://luma.com/empowerly-bridgewater-1",
+      "date": "2026-09-17",
+      "tz": "ET"
     },
     {
       "file": "Inside the Admissions Committee - Dinner with a Former Admissions Officer - Guests - 2026-10-19-18-33-54.csv",
@@ -128,7 +150,8 @@
       "venue": "MacArthur Park Restaurant and Bar, 27 University Ave, Palo Alto, CA 94301",
       "lat": 37.4430264,
       "lon": -122.1655246,
-      "venueSource": "https://luma.com/stanford-passsion-projects-sep-27"
+      "venueSource": "https://luma.com/stanford-passsion-projects-sep-27",
+      "startHour": 17
     },
     {
       "file": "Inside the Admissions Committee - Dinner with a Former Admissions Officer - Guests - 2026-10-19-18-51-33.csv",
@@ -150,5 +173,6 @@
       "lon": -121.9911772,
       "venueSource": "https://luma.com/fremont-oct-7"
     }
-  ]
+  ],
+  "timeNote": "date and tz are the event's local date and time zone. startHour overrides the default 18 (6 PM) for raw exports; the September 27 panel started at 17 (5 PM)."
 }
